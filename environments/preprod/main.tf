@@ -8,11 +8,26 @@ module "alb" {
 }
 
 module "lt" {
-  source            = "../../modules/launch-template"
-  name              = "${var.environment}-app"
-  instance_type     = local.env.instance_type
-  security_group_id = data.terraform_remote_state.core.outputs.security_group_ids.app
-  tags              = local.common_tags
+  source = "../../modules/launch-template"
+
+  name               = "${var.environment}-app"
+  instance_type      = local.env.instance_type
+  security_group_ids = [
+    data.terraform_remote_state.core.outputs.security_group_ids.app
+  ]
+
+  account_id = data.aws_caller_identity.current.account_id
+
+  user_data = templatefile(
+    "${path.module}/../../scripts/userdata.sh",
+    {
+      DB_HOST       = module.rds.endpoint
+      DB_USER       = "postgreuser"
+      ECR_IMAGE_URI = "${data.aws_caller_identity.current.account_id}.dkr.ecr.ap-south-1.amazonaws.com/java-app"
+    }
+  )
+
+  tags = local.common_tags
 }
 
 module "asg" {
