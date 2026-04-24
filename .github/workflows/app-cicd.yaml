@@ -40,11 +40,12 @@ jobs:
       # Code vulnerability scan
       # --------------------------
       - name: Trivy source scan
-        uses: aquasecurity/trivy-action@v0.20.0
+        uses: aquasecurity/trivy-action@v0.19.0
         with:
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: 1
+
       # --------------------------
       # AWS OIDC Auth
       # --------------------------
