@@ -70,7 +70,7 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           IMAGE_URI=$ACCOUNT_ID.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPO }}
 
-          docker build -t $IMAGE_URI:$IMAGE_TAG .
+          docker build -t $IMAGE_URI:$IMAGE_TAG app/java-app
           docker tag $IMAGE_URI:$IMAGE_TAG $IMAGE_URI:latest
 
           docker push $IMAGE_URI:$IMAGE_TAG
