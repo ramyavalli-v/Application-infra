@@ -1,61 +1,129 @@
-name: App CI/CD Pipeline
+name: Java App CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
 
 env:
-  AWS_REGION: ap-south-1
-  ECR_REPOSITORY: c3ops-app
+  JAVA_VERSION: "17"
 
 jobs:
-# ======================================================
-# 1️⃣ BUILD, SCAN & PUSH (ONCE)
-# ======================================================
-  build_and_push:
+# ==============================
+# 1. BUILD + SCAN + PUSH
+# ==============================
+  build_scan_push:
     runs-on: ubuntu-latest
 
-    permissions:
-      id-token: write
-      contents: read
-
     outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
+      image_tag: ${{ steps.image.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/github-actions-role
-          aws-region: ${{ env.AWS_REGION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
 
-      - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+      - name: Build Java application
+        run: mvn clean package -DskipTests
+
+      # --------------------------
+      # Code vulnerability scan
+      # --------------------------
+      - name: Trivy source scan
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: 1
 
-      - name: Login to ECR
+      # --------------------------
+      # AWS OIDC Auth
+      # --------------------------
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Docker Image
-        id: meta
+      # --------------------------
+      # Build & push Docker image
+      # --------------------------
+      - name: Build and Push Image
+        id: image
         run: |
-          TAG=${GITHUB_SHA}
-          IMAGE_URI=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}
+          IMAGE_TAG=${GITHUB_SHA}
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPO }}
 
-          docker build -t $IMAGE_URI:$TAG .
-          docker push $IMAGE_URI:$TAG
+          docker build -t $IMAGE_URI:$IMAGE_TAG .
+          docker tag $IMAGE_URI:$IMAGE_TAG $IMAGE_URI:latest
 
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          docker push $IMAGE_URI:$IMAGE_TAG
+          docker push $IMAGE_URI:latest
 
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # --------------------------
+      # Image vulnerability scan
+      # --------------------------
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
-          image-ref: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${{ steps.meta.outputs.tag }}
+          image-ref: ${{ steps.image.outputs.tag }}
           severity: HIGH,CRITICAL
           exit-code: 1
+
+# ==============================
+# 2. DEPLOY TO PREPROD (AUTO)
+# ==============================
+  deploy_preprod:
+    needs: build_scan_push
+    runs-on: ubuntu-latest
+    environment: preprod
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to Preprod (ASG Refresh)
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name ${{ vars.ASG_NAME }} \
+            --preferences MinHealthyPercentage=80
+
+# ==============================
+# 3. DEPLOY TO PROD (MANUAL)
+# ==============================
+  deploy_prod:
+    needs: deploy_preprod
+    runs-on: ubuntu-latest
+    environment: prod   # 👈 Manual approval enforced here
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to Prod (ASG Refresh)
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name ${{ vars.ASG_NAME }} \
+            --preferences MinHealthyPercentage=90
