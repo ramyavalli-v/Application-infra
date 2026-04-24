@@ -45,7 +45,6 @@ jobs:
           scan-type: fs
           severity: HIGH,CRITICAL
           exit-code: 1
-
       # --------------------------
       # AWS OIDC Auth
       # --------------------------
