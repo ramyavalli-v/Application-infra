@@ -32,9 +32,11 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
-
+        
       - name: Build Java application
+        working-directory: app/java-app
         run: mvn clean package -DskipTests
+
 
       # --------------------------
       # Code vulnerability scan
