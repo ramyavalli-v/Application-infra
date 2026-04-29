@@ -13,7 +13,9 @@ permissions:
 env:
   JAVA_VERSION: "17"
   environment: preprod
-  aws-region: ap-south-1
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
 
 jobs:
 # ==============================
