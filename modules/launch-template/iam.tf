@@ -38,7 +38,7 @@ resource "aws_iam_policy" "read_db_secret" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:ap-south-1:${var.account_id}:secret:preprod/db/credentials*"
+      Resource = "arn:aws:secretsmanager:ap-south-1:${var.account_id}:secret:preprod/db/password*"
     }]
   })
 }
