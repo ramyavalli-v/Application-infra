@@ -38,6 +38,11 @@ jobs:
         working-directory: app/java-app
         run: mvn clean package -DskipTests
 
+      - name: Rename JAR for Docker
+        run: |
+          mv app/java-app/target/*.jar app/java-app/target/app.jar
+
+
 
       # --------------------------
       # Code vulnerability scan
