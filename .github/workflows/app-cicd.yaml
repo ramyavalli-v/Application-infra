@@ -12,6 +12,7 @@ permissions:
 
 env:
   JAVA_VERSION: "17"
+  environment: preprod
 
 jobs:
 # ==============================
