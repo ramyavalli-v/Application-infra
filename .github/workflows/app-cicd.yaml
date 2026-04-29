@@ -42,8 +42,9 @@ jobs:
         run: |
           mv app/java-app/target/*.jar app/java-app/target/app.jar
 
-
-
+      
+      - name: Verify JAR exists
+        run: ls -l app/java-app/target
       # --------------------------
       # Code vulnerability scan
       # --------------------------
