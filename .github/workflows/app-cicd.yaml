@@ -13,6 +13,7 @@ permissions:
 env:
   JAVA_VERSION: "17"
   environment: preprod
+  aws-region: ap-south-1
 
 jobs:
 # ==============================
