@@ -1,0 +1,134 @@
+pipeline {
+    agent any
+
+    environment {
+        JAVA_VERSION = "17"
+        AWS_REGION = credentials('aws-region')   // or hardcode if needed
+        ECR_REPO = "your-ecr-repo"
+        ASG_NAME = "your-asg-name"
+    }
+
+    stages {
+
+        // =========================
+        // 1. Checkout Code
+        // =========================
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/your-repo.git'
+            }
+        }
+
+        // =========================
+        // 2. Build Java App
+        // =========================
+        stage('Build') {
+            steps {
+                dir('app/java-app') {
+                    sh 'mvn clean package -DskipTests'
+                }
+            }
+        }
+
+        // =========================
+        // 3. Rename JAR
+        // =========================
+        stage('Prepare JAR') {
+            steps {
+                sh '''
+                mv app/java-app/target/*.jar app/java-app/target/app.jar
+                ls -l app/java-app/target
+                '''
+            }
+        }
+
+        // =========================
+        // 4. Trivy File Scan
+        // =========================
+        stage('Trivy Source Scan') {
+            steps {
+                sh '''
+                trivy fs --severity HIGH,CRITICAL --exit-code 0 .
+                '''
+            }
+        }
+
+        // =========================
+        // 5. Build & Push Docker Image
+        // =========================
+        stage('Docker Build and Push') {
+            steps {
+                script {
+                    def ACCOUNT_ID = sh(
+                        script: "aws sts get-caller-identity --query Account --output text",
+                        returnStdout: true
+                    ).trim()
+
+                    def IMAGE_TAG = "${env.BUILD_NUMBER}"
+                    def IMAGE_URI = "${ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}"
+
+                    sh """
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                    docker build -t ${IMAGE_URI}:${IMAGE_TAG} app/java-app
+                    docker tag ${IMAGE_URI}:${IMAGE_TAG} ${IMAGE_URI}:latest
+
+                    docker push ${IMAGE_URI}:${IMAGE_TAG}
+                    docker push ${IMAGE_URI}:latest
+                    """
+                    
+                    env.IMAGE_TAG = IMAGE_TAG
+                    env.IMAGE_URI = IMAGE_URI
+                }
+            }
+        }
+
+        // =========================
+        // 6. Trivy Image Scan
+        // =========================
+        stage('Trivy Image Scan') {
+            steps {
+                sh """
+                trivy image --severity HIGH,CRITICAL --exit-code 0 ${IMAGE_URI}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        // =========================
+        // 7. Deploy to Preprod
+        // =========================
+        stage('Deploy Preprod') {
+            steps {
+                sh """
+                aws autoscaling start-instance-refresh \
+                --auto-scaling-group-name ${ASG_NAME} \
+                --preferences MinHealthyPercentage=80
+                """
+            }
+        }
+
+        // =========================
+        // 8. Deploy to Prod (Manual)
+        // =========================
+        stage('Deploy Prod') {
+            steps {
+                input message: 'Approve Production Deployment?', ok: 'Deploy'
+
+                sh """
+                aws autoscaling start-instance-refresh \
+                --auto-scaling-group-name ${ASG_NAME} \
+                --preferences MinHealthyPercentage=90
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed!"
+        }
+    }
+}

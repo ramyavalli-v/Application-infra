@@ -19,3 +19,8 @@ output "listener_arn" {
   description = "ARN of the HTTP listener"
   value       = aws_lb_listener.http.arn
 }
+
+output "vpc_id" {
+  description = "VPC id"
+  value       = aws_lb.this.vpc_id
+}
